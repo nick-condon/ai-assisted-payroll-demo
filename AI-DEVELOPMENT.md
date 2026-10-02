@@ -7,14 +7,14 @@ This note describes the working method for the fictional payroll demo. It does n
 The human developer owned:
 
 - Problem definition: show a payroll close process without exposing a real payroll system.
-- Requirements for this slice: five fictional employees, one fortnight, draft payslips, finalise, and a separate close.
-- Workflow: who may prepare pay, and who else must close it.
+- Requirements for this slice: five fictional employees, one fortnight, draft payslips, finalise, a separate close, and two employee sign-ins that can read only their own payslip.
+- Workflow: who may prepare pay, who else must close it, and which employee record a self-service session may read.
 - Scope: what to leave out, including tax, payments, and a real identity provider.
 - Architecture: one Node process, SQL in PostgreSQL, server-side sessions, a static page.
 - UI decisions: one page, a visible role, and a close button that calls the API even when the role will be refused.
-- Database decisions: the tables in `src/db/migrations/001_init.sql`.
-- RBAC model: viewer, processor, and closer, enforced with `requireAuth` and `requireRole`.
-- Testing approach: formula tests plus API tests for 401, 403, and the close gate.
+- Database decisions: the tables in `src/db/migrations`, including `users.employee_id` as the ownership link.
+- RBAC model: viewer, processor, closer, and employee, enforced with `requireAuth` and `requireRole`, plus payslip queries scoped to the session's employee id.
+- Testing approach: formula tests plus API tests for 401, 403, the close gate, own-record access, and cross-employee denial.
 - Review and acceptance of the resulting code.
 
 ## AI-assisted work
@@ -27,7 +27,7 @@ AI coding tools were used to help:
 - Iterate on the Jest cases from the acceptance rules above
 - Accelerate documentation drafts
 
-Those tools worked inside decisions the developer had already made. They did not choose the slice, the three roles, or the toy formula. They were not given production source or production data.
+Those tools worked inside decisions the developer had already made. They did not choose the slice, the role split, the employee-to-user link, or the toy formula. They were not given production source or production data.
 
 ## Development loop
 

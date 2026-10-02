@@ -9,6 +9,7 @@ export type DemoUser = {
   email: string;
   displayName: string;
   roles: string[];
+  employeeId: string | null;
 };
 
 export function hashToken(token: string): string {
@@ -49,6 +50,7 @@ export async function loadUserBySessionToken(
         u.email,
         u.display_name,
         u.active,
+        u.employee_id,
         COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles
       FROM sessions s
       JOIN users u ON u.id = s.user_id
@@ -66,7 +68,8 @@ export async function loadUserBySessionToken(
     id: String(row.id),
     email: String(row.email),
     displayName: String(row.display_name),
-    roles: Array.isArray(row.roles) ? row.roles.map(String) : []
+    roles: Array.isArray(row.roles) ? row.roles.map(String) : [],
+    employeeId: row.employee_id ? String(row.employee_id) : null
   };
 }
 

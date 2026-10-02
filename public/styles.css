@@ -158,6 +158,10 @@ button:disabled {
   font-weight: 650;
 }
 
+.panel.payslip {
+  margin-top: 14px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

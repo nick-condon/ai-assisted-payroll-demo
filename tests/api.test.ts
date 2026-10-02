@@ -184,3 +184,115 @@ describe('payroll workflow', () => {
     expect(result.body).toEqual({ status: 'ok' });
   });
 });
+
+async function generatedPayslips(): Promise<Array<{ id: string; employeeName: string }>> {
+  const processor = await login('processor@example.com');
+  const runId = await openRunId(processor);
+  const generated = await api(`/api/payroll-runs/${runId}/generate`, {
+    method: 'POST',
+    cookie: processor
+  });
+  if (generated.status !== 201) {
+    throw new Error(`generate failed: ${generated.status}`);
+  }
+  const listed = await api(`/api/payroll-runs/${runId}/payslips`, { cookie: processor });
+  return listed.body.payslips;
+}
+
+describe('employee self-service', () => {
+  test('rejects an unauthenticated employee endpoint with 401', async () => {
+    const profile = await api('/api/my/profile');
+    const payslips = await api('/api/my/payslips');
+    expect(profile.status).toBe(401);
+    expect(payslips.status).toBe(401);
+  });
+
+  test('lets an employee retrieve their own profile', async () => {
+    const cookie = await login('alex.employee@example.com');
+    const result = await api('/api/my/profile', { cookie });
+    expect(result.status).toBe(200);
+    expect(result.body.profile).toMatchObject({
+      employeeNumber: 'E-1001',
+      firstName: 'Alex',
+      lastName: 'Morgan',
+      email: 'alex.morgan@example.com'
+    });
+    expect(result.body.employees).toBeUndefined();
+  });
+
+  test('lets an employee retrieve their own payslip list', async () => {
+    const payslips = await generatedPayslips();
+    const alexAdmin = payslips.find((payslip) => payslip.employeeName === 'Alex Morgan');
+    const cookie = await login('alex.employee@example.com');
+    const result = await api('/api/my/payslips', { cookie });
+    expect(result.status).toBe(200);
+    expect(result.body.payslips).toHaveLength(1);
+    expect(result.body.payslips[0].id).toBe(alexAdmin?.id);
+    expect(result.body.payslips[0].netPay).toBe(30.76);
+  });
+
+  test('lets an employee retrieve their own payslip', async () => {
+    const payslips = await generatedPayslips();
+    const alexAdmin = payslips.find((payslip) => payslip.employeeName === 'Alex Morgan');
+    const cookie = await login('alex.employee@example.com');
+    const result = await api(`/api/my/payslips/${alexAdmin?.id}`, { cookie });
+    expect(result.status).toBe(200);
+    expect(result.body.payslip).toMatchObject({
+      id: alexAdmin?.id,
+      employeeName: 'Alex Morgan',
+      grossPay: 38.46,
+      leaveDeduction: 7.7,
+      netPay: 30.76,
+      status: 'draft'
+    });
+  });
+
+  test('hides another employee payslip with 404', async () => {
+    const payslips = await generatedPayslips();
+    const alexAdmin = payslips.find((payslip) => payslip.employeeName === 'Alex Morgan');
+    const jamieAdmin = payslips.find((payslip) => payslip.employeeName === 'Jamie Lee');
+    const alex = await login('alex.employee@example.com');
+    const denied = await api(`/api/my/payslips/${jamieAdmin?.id}`, { cookie: alex });
+    expect(denied.status).toBe(404);
+    expect(denied.body).toEqual({ error: 'Not found' });
+
+    const jamie = await login('jamie.employee@example.com');
+    const own = await api(`/api/my/payslips/${jamieAdmin?.id}`, { cookie: jamie });
+    const stillDenied = await api(`/api/my/payslips/${alexAdmin?.id}`, { cookie: jamie });
+    expect(own.status).toBe(200);
+    expect(own.body.payslip.employeeName).toBe('Jamie Lee');
+    expect(stillDenied.status).toBe(404);
+  });
+
+  test('rejects payroll generation from an employee with 403', async () => {
+    const employee = await login('alex.employee@example.com');
+    const processor = await login('processor@example.com');
+    const runId = await openRunId(processor);
+    const denied = await api(`/api/payroll-runs/${runId}/generate`, {
+      method: 'POST',
+      cookie: employee
+    });
+    expect(denied.status).toBe(403);
+  });
+
+  test('rejects payslip finalisation from an employee with 403', async () => {
+    const payslips = await generatedPayslips();
+    const employee = await login('alex.employee@example.com');
+    const denied = await api(`/api/payslips/${payslips[0].id}/finalise`, {
+      method: 'POST',
+      cookie: employee
+    });
+    expect(denied.status).toBe(403);
+  });
+
+  test('rejects payroll close from an employee with 403', async () => {
+    const employee = await login('alex.employee@example.com');
+    const processor = await login('processor@example.com');
+    const runId = await openRunId(processor);
+    const denied = await api(`/api/payroll-runs/${runId}/close`, {
+      method: 'POST',
+      cookie: employee
+    });
+    expect(denied.status).toBe(403);
+  });
+});

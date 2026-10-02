@@ -10,7 +10,7 @@ A payroll system can grow into tax, payments, leave policy, and employee self-se
 
 **Decision**
 
-Ship one fortnight, five fictional employees, draft payslips, finalise, and a separate close.
+Ship one fortnight, five fictional employees, draft payslips, finalise, a separate close, and a read-only self-service view for two of those employees.
 
 **Why**
 
@@ -18,7 +18,7 @@ The slice still crosses the whole path: UI, API, rules, database, and tests. The
 
 **Trade-off**
 
-The demo does not show reporting, document generation, employee self-service, or a real pay calculation.
+The demo does not show reporting, document generation, or a real pay calculation. The employee view is one person's profile and payslips, not a full self-service product.
 
 ### Decision: TypeScript and Express
 
@@ -82,7 +82,7 @@ The UI disables Generate for some roles. A disabled button is not a security bou
 
 **Decision**
 
-`requireAuth` then `requireRole` on each protected route. Viewer, processor, and closer are three role codes. Close is not granted to the processor.
+`requireAuth` then `requireRole` on each protected route. Viewer, processor, closer, and employee are four role codes. Close is not granted to the processor. The employee role is not granted generate, finalise, or close.
 
 **Why**
 
@@ -100,7 +100,7 @@ The schema has to be recreated the same way on a new machine and inside the app 
 
 **Decision**
 
-`src/db/migrations/001_init.sql`, applied by `src/db/migrate.ts`, which records filenames in `schema_migrations`.
+Numbered SQL files under `src/db/migrations`, applied by `src/db/migrate.ts`, which records filenames in `schema_migrations`. `002_employee_self_service.sql` adds the employee role and `users.employee_id`.
 
 **Why**
 
@@ -145,3 +145,21 @@ The calculator tests do not need a browser. The API tests prove that role checks
 **Trade-off**
 
 There is no browser automation in `npm test`, and no coverage target. The click-through is manual.
+
+### Decision: Record-level employee access
+
+**Context**
+
+Employee payroll information is sensitive and must be isolated between users. A role of "employee" only says that this person may open self-service. It does not say which payslips they may read. Hiding another employee's row in the page would not stop a direct request.
+
+**Decision**
+
+Store `users.employee_id` and resolve it on the server when the session is loaded. `GET /api/my/profile`, `GET /api/my/payslips`, and `GET /api/my/payslips/:id` query with that id. The path may contain a payslip id. It may not choose the employee. A payslip outside that scope returns 404, the same as an unknown id.
+
+**Why**
+
+The browser is not the authorization boundary. Tests sign in as Alex Morgan and request Jamie Lee's payslip id. The server denies it. Email addresses are not compared, so a shared or similar address cannot grant access.
+
+**Trade-off**
+
+The demo uses a single nullable foreign key from user to employee. It does not model an identity lifecycle, account recovery, or a person with more than one employee record. The 404 also means a client cannot distinguish "missing" from "someone else's", which is the intended privacy trade-off for this demo.

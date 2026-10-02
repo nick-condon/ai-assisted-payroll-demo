@@ -8,7 +8,7 @@ It is not a production payroll system. Every employee, sign-in identity, salary,
 
 ## Problem
 
-A payroll period should not be prepared and closed by the same unchecked action.
+A payroll period should not be prepared and closed by the same unchecked action, and an employee should see only their own pay.
 
 The demo models that split:
 
@@ -18,6 +18,7 @@ The demo models that split:
 - A different role, the closer, closes the run, and only after every payslip is final.
 - A viewer can read the result and cannot change it.
 - After close, the run is immutable.
+- An employee sign-in can read that person's own profile and payslips. It cannot run payroll, and it cannot read another employee's payslip.
 
 ## Architecture
 
@@ -29,6 +30,7 @@ Express / TypeScript API
         |
         +--> server-side sessions
         +--> role checks
+        +--> record-level employee scope
         +--> payroll services
         |
         v
@@ -37,12 +39,13 @@ PostgreSQL 16
 
 What is actually in the repository:
 
-- An HttpOnly session cookie. The server stores only a hash of the token and loads the user's roles from PostgreSQL on each request.
+- An HttpOnly session cookie. The server stores only a hash of the token and loads the user's roles, and any linked employee, from PostgreSQL on each request.
 - Role checks on the API. Hiding a button is not the authorisation control.
-- One SQL migration under `src/db/migrations`, applied by `npm run migrate`.
+- Record-level checks for employee self-service. `/api/my/...` uses the employee id stored on the user, not an id chosen in the browser.
+- SQL migrations under `src/db/migrations`, applied by `npm run migrate`.
 - A small REST API. The route table is in [Security / authorization](#security--authorization).
 - Docker Compose for PostgreSQL 16 and the Node 22 application image.
-- Jest tests for the formula, 401/403 behaviour, and the close rules.
+- Jest tests for the formula, role checks, record-level payslip access, and the close rules.
 
 There is no frontend framework, no OAuth client, and no production deployment in this repository.
 
@@ -57,6 +60,7 @@ Further detail: [ARCHITECTURE.md](ARCHITECTURE.md), [DECISIONS.md](DECISIONS.md)
 | PostgreSQL | Relational model appropriate for payroll-style transactional data |
 | Server-side sessions | Simple demo authentication model with server-controlled session state |
 | Server-side RBAC | Authorization must not depend on UI controls |
+| Server-side record scope | An employee payslip query uses the employee id stored for that session |
 | SQL migrations | Reproducible database setup |
 | Docker Compose | Repeatable local environment |
 | Small vertical slice | Demonstrates complete delivery without unnecessary product complexity |
@@ -77,11 +81,14 @@ This is deliberately simplified for a public demo. It is not production-grade id
 
 Protected routes deny by default: authentication is required, and the role list is explicit. Unknown API paths return 404.
 
-| Role | Read employees, runs, and payslips | Generate and finalise | Close |
-| --- | --- | --- | --- |
-| Payroll viewer | Yes | No | No |
-| Payroll processor | Yes | Yes | No |
-| Payroll closer | Yes | No | Yes, once every payslip is final |
+| Role | Read employees, runs, and payslips | Generate and finalise | Close | Own payslips only |
+| --- | --- | --- | --- | --- |
+| Payroll viewer | Yes | No | No | No |
+| Payroll processor | Yes | Yes | No | No |
+| Payroll closer | Yes | No | Yes, once every payslip is final | No |
+| Employee | No | No | No | Yes |
+
+`GET /api/my/profile`, `GET /api/my/payslips`, and `GET /api/my/payslips/:id` require the `employee` role. The query is restricted to `users.employee_id` from the session. A payslip id that belongs to someone else returns 404, the same response as an unknown id, so the API does not confirm that the other payslip exists.
 
 A closed run rejects generate and finalise. The service returns 409 with `Closed payroll cannot be modified`.
 
@@ -98,10 +105,10 @@ Seed salaries are 1000, 2000, and 3000 so the amounts stay obviously fictional.
 
 ## Testing
 
-Jest with ts-jest. Ten tests, in two files:
+Jest with ts-jest. Eighteen tests, in two files:
 
 - `tests/payrollCalculator.test.ts` — fortnightly base, unpaid leave, allowance, and cent rounding.
-- `tests/api.test.ts` — unauthenticated read returns 401; a viewer can read; a viewer cannot generate (403); a processor cannot close (403); generate creates drafts; finalise sets `final`; close fails while a draft remains; the closer can close when all payslips are final; a closed run cannot be generated or finalised again.
+- `tests/api.test.ts` — unauthenticated reads return 401; a viewer can read; a viewer cannot generate (403); a processor cannot close (403); generate creates drafts; finalise sets `final`; close fails while a draft remains; the closer can close when all payslips are final; a closed run cannot be generated or finalised again; an employee can read their own profile, payslip list, and payslip; another employee's payslip returns 404; an employee cannot generate, finalise, or close.
 
 No coverage percentage is claimed. API tests need the Compose database running. They use a separate database, `payroll_demo_test`, and reset it themselves.
 
@@ -145,12 +152,16 @@ The database password `demo_local_password` exists only in this local Compose fi
 7. Close the payroll run.
 8. Sign out. Sign in as Avery Brooks, payroll viewer.
 9. Observe the closed, read-only run. Generate stays unavailable.
+10. Sign in as **Employee — Alex Morgan**. The page shows Alex's profile and Alex's payslip only.
+11. Jamie Lee's payslip is not in that response. Requesting Jamie's payslip id as Alex returns 404. The five-minute script is [DEMO.md](DEMO.md).
 
 ## Production relationship
 
 This demo is intentionally separate from the production payroll system. It is a synthetic representation of selected engineering concepts from a real production project.
 
-The author designed and deployed that production system for a school. It supports approximately 125 employees, four administrative users, and around 50 employee self-service users. That system has a wider workflow, operational controls, and a real identity provider. This repository keeps only a fictional slice that can be shown in public: relational payroll state, server-side authorisation, tests, and a runnable UI.
+The author designed and deployed that production system for a school. It supports approximately 125 employees, four administrative users, and around 50 employee self-service users. That system has a wider workflow, operational controls, and a real identity provider. This repository keeps only a fictional slice that can be shown in public: relational payroll state, server-side authorisation, a simplified employee view of one's own payslip, tests, and a runnable UI.
+
+The employee page in this demo is not the production self-service portal.
 
 Nothing here is copied from the production codebase. Comparison: [PRODUCTION-VS-DEMO.md](PRODUCTION-VS-DEMO.md).
 

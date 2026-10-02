@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { employeeRouter } from './routes/employees.js';
 import { payrollRouter } from './routes/payroll.js';
 import { payslipRouter } from './routes/payslips.js';
+import { selfServiceRouter } from './routes/selfService.js';
 import { sessionRouter } from './routes/session.js';
 
 export function createApp(db: pg.Pool): Express {
@@ -16,6 +17,7 @@ export function createApp(db: pg.Pool): Express {
   });
 
   app.use('/api', sessionRouter(db));
+  app.use('/api', selfServiceRouter(db));
   app.use('/api', employeeRouter(db));
   app.use('/api', payrollRouter(db));
   app.use('/api', payslipRouter(db));

@@ -14,6 +14,8 @@ A single Node process serves a static page and a JSON API. PostgreSQL holds user
     |
     +--> [RBAC / Authorization]
     |
+    +--> [Record-level employee scope]
+    |
     +--> [Payroll Services]
     |
     v
@@ -37,21 +39,42 @@ Payroll arithmetic lives in `src/services/payrollCalculator.ts`. Run transitions
 
 Finalise and close follow the same shape: session, role, then `finalisePayslip` or `closePayrollRun`.
 
+`GET /api/my/payslips/:id` is the record-level example.
+
+1. The request arrives at `selfServiceRouter` in `src/routes/selfService.ts`.
+2. `requireAuth` loads the session user, including `users.employee_id`. No session returns 401.
+3. `requireRole('employee')` returns 403 for viewer, processor, and closer. Payroll administration routes do the reverse: they do not list `employee`, so an employee who calls generate, finalise, or close receives 403.
+4. The handler reads `req.user.employeeId`. It does not read an employee id from the query string or body.
+5. The payslip query requires both the path id and that employee id.
+6. A matching row is returned as JSON. No row returns 404. That covers an unknown id and another employee's payslip with the same response, so the caller is not told whether the other row exists.
+
+## Authorization
+
+Two checks are separate.
+
+### Role authorization
+
+`requireRole` decides which operations a session may call: generate and finalise for `payroll_processor`, close for `payroll_closer`, payroll reads for the three payroll roles, and `/api/my/...` for `employee`.
+
+### Record-level authorization
+
+Role is not enough for a payslip. `users.employee_id` is set in the database when the fictional employee users are seeded. Alex Morgan's session is linked to employee `E-1001`. Jamie Lee's session is linked to `E-1002`. Profile and payslip queries filter on that stored id. The browser cannot substitute the other employee's id and have the query follow it.
+
 ## Data model
 
 | Entity | Role in the demo |
 | --- | --- |
-| `users` | Fictional people who can sign in. |
-| `roles` | `payroll_viewer`, `payroll_processor`, `payroll_closer`. |
+| `users` | Fictional people who can sign in. `employee_id` is set only for the two employee sign-ins. |
+| `roles` | `payroll_viewer`, `payroll_processor`, `payroll_closer`, `employee`. |
 | `user_roles` | Which user has which role. The seed assigns one role each. |
-| `employees` | People being paid. They are not login accounts. |
+| `employees` | People being paid. Two of them are linked from `users.employee_id`. The other three have no sign-in. |
 | `payroll_runs` | One fortnight, `open` or `closed`. |
 | `leave_entries` | Unpaid leave days, linked to an employee. |
 | `allowances` | A flat amount for one employee on one run. |
 | `payslips` | One row per employee per run: gross, leave deduction, allowances, net, `draft` or `final`. |
 | `sessions` | Hash of the opaque cookie token, user id, and expiry. |
 
-A payslip belongs to one run and one employee. Leave belongs to an employee and is counted when its date falls inside the run. An allowance belongs to both an employee and a run. A session belongs to a user. Roles are reached only through `user_roles`.
+A payslip belongs to one run and one employee. Leave belongs to an employee and is counted when its date falls inside the run. An allowance belongs to both an employee and a run. A session belongs to a user. Roles are reached only through `user_roles`. An employee sign-in reaches one employee through `users.employee_id`, not through a matching email.
 
 ## State model
 

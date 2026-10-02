@@ -18,6 +18,19 @@ const DEMO_USERS = [
   }
 ] as const;
 
+const EMPLOYEE_USERS = [
+  {
+    email: 'alex.employee@example.com',
+    displayName: 'Alex Morgan',
+    employeeNumber: 'E-1001'
+  },
+  {
+    email: 'jamie.employee@example.com',
+    displayName: 'Jamie Lee',
+    employeeNumber: 'E-1002'
+  }
+] as const;
+
 const EMPLOYEES = [
   ['E-1001', 'Alex', 'Morgan', 'alex.morgan@example.com', 1000],
   ['E-1002', 'Jamie', 'Lee', 'jamie.lee@example.com', 2000],
@@ -45,8 +58,41 @@ export async function resetDemoTables(db: pg.Pool): Promise<void> {
     VALUES
       ('payroll_viewer', 'Payroll viewer'),
       ('payroll_processor', 'Payroll processor'),
-      ('payroll_closer', 'Payroll closer')
+      ('payroll_closer', 'Payroll closer'),
+      ('employee', 'Employee')
   `);
+}
+
+async function upsertEmployeeUser(
+  client: pg.PoolClient,
+  user: (typeof EMPLOYEE_USERS)[number]
+): Promise<void> {
+  const employee = await client.query(
+    'SELECT id FROM employees WHERE employee_number = $1',
+    [user.employeeNumber]
+  );
+  if (!employee.rowCount) {
+    throw new Error(`Missing fictional employee ${user.employeeNumber}`);
+  }
+  const inserted = await client.query(
+    `
+      INSERT INTO users (email, display_name, employee_id)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (email) DO UPDATE
+        SET display_name = EXCLUDED.display_name,
+            employee_id = EXCLUDED.employee_id
+      RETURNING id
+    `,
+    [user.email, user.displayName, employee.rows[0].id]
+  );
+  await client.query(
+    `
+      INSERT INTO user_roles (user_id, role_id)
+      SELECT $1, id FROM roles WHERE code = 'employee'
+      ON CONFLICT DO NOTHING
+    `,
+    [inserted.rows[0].id]
+  );
 }
 
 export async function seedDemoData(db: pg.Pool, options: { reset?: boolean } = {}): Promise<'seeded' | 'skipped'> {
@@ -56,7 +102,10 @@ export async function seedDemoData(db: pg.Pool, options: { reset?: boolean } = {
     const existing = await db.query(
       `SELECT 1 FROM users WHERE email = 'viewer@example.com'`
     );
-    if (existing.rowCount) return 'skipped';
+    if (existing.rowCount) {
+      await ensureEmployeeUsers(db);
+      return 'skipped';
+    }
   }
 
   const client = await db.connect();
@@ -159,6 +208,10 @@ export async function seedDemoData(db: pg.Pool, options: { reset?: boolean } = {
       [runId]
     );
 
+    for (const user of EMPLOYEE_USERS) {
+      await upsertEmployeeUser(client, user);
+    }
+
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -168,4 +221,20 @@ export async function seedDemoData(db: pg.Pool, options: { reset?: boolean } = {
   }
 
   return 'seeded';
+}
+
+async function ensureEmployeeUsers(db: pg.Pool): Promise<void> {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    for (const user of EMPLOYEE_USERS) {
+      await upsertEmployeeUser(client, user);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }

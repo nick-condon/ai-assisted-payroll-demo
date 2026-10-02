@@ -7,6 +7,8 @@
     employees: [],
     run: null,
     payslips: [],
+    profile: null,
+    payslipDetail: null,
     message: null,
     messageKind: 'ok'
   };
@@ -18,8 +20,11 @@
   var ROLE_LABELS = {
     payroll_viewer: 'Payroll viewer',
     payroll_processor: 'Payroll processor',
-    payroll_closer: 'Payroll closer'
+    payroll_closer: 'Payroll closer',
+    employee: 'Employee'
   };
+
+  var ROLE_ORDER = ['payroll_processor', 'payroll_closer', 'payroll_viewer', 'employee'];
 
   function roleLabel(roles) {
     if (!roles || !roles.length) return 'No role';
@@ -102,16 +107,33 @@
     }
   }
 
+  async function refreshSelfService() {
+    var profile = await api('/api/my/profile');
+    var listed = await api('/api/my/payslips');
+    state.profile = profile.profile;
+    state.payslips = listed.payslips;
+    state.payslipDetail = null;
+    if (state.payslips.length) {
+      var detail = await api('/api/my/payslips/' + state.payslips[0].id);
+      state.payslipDetail = detail.payslip;
+    }
+  }
+
   async function boot() {
     try {
       var me = await api('/api/me');
       state.user = me.user;
-      await refreshWorkspace();
+      if (hasRole('employee')) await refreshSelfService();
+      else await refreshWorkspace();
     } catch (error) {
-      if (error.status !== 401) setMessage(error.message, 'error');
-      state.user = null;
-      var listed = await api('/api/demo-users');
-      state.users = listed.users;
+      if (!state.user || error.status === 401) {
+        if (error.status !== 401) setMessage(error.message, 'error');
+        state.user = null;
+        var listed = await api('/api/demo-users');
+        state.users = listed.users;
+      } else {
+        setMessage((error.status ? error.status + ' ' : '') + error.message, 'error');
+      }
     }
     render();
   }
@@ -164,13 +186,29 @@
       .replace(/"/g, '&quot;');
   }
 
+  function identityTitle(user) {
+    if (user.roles.indexOf('employee') !== -1) return 'Employee — ' + user.displayName;
+    return user.displayName;
+  }
+
+  function identitySubtitle(user) {
+    if (user.roles.indexOf('employee') !== -1) return 'Own payslips only';
+    return roleLabel(user.roles);
+  }
+
   function renderLogin() {
     sessionSlot.textContent = '';
-    var buttons = state.users.map(function (user) {
+    var users = state.users.slice().sort(function (a, b) {
+      var aRole = ROLE_ORDER.indexOf(a.roles[0]);
+      var bRole = ROLE_ORDER.indexOf(b.roles[0]);
+      if (aRole !== bRole) return (aRole === -1 ? 9 : aRole) - (bRole === -1 ? 9 : bRole);
+      return a.displayName.localeCompare(b.displayName);
+    });
+    var buttons = users.map(function (user) {
       return (
         '<button type="button" data-user-id="' + escapeHtml(user.id) + '">' +
-          escapeHtml(user.displayName) +
-          '<br><span class="muted">' + escapeHtml(roleLabel(user.roles)) + '</span>' +
+          escapeHtml(identityTitle(user)) +
+          '<br><span class="muted">' + escapeHtml(identitySubtitle(user)) + '</span>' +
         '</button>'
       );
     }).join('');
@@ -261,8 +299,77 @@
     });
   }
 
+  function payslipLines(detail) {
+    var lines = [
+      ['Employee', detail.employeeName],
+      ['Period', detail.periodStart + ' to ' + detail.periodEnd],
+      ['Gross pay', money(detail.grossPay)]
+    ];
+    if (detail.leaveDeduction > 0) lines.push(['Unpaid leave', money(detail.leaveDeduction)]);
+    if (detail.allowances > 0) lines.push(['Allowance', money(detail.allowances)]);
+    lines.push(['Resulting pay', money(detail.netPay)]);
+    lines.push(['Status', detail.status]);
+    return lines.map(function (line) {
+      return '<div><dt>' + escapeHtml(line[0]) + '</dt><dd>' + escapeHtml(line[1]) + '</dd></div>';
+    }).join('');
+  }
+
+  function renderSelfService() {
+    var profile = state.profile;
+    sessionSlot.innerHTML =
+      '<p class="who"><strong>' + escapeHtml(state.user.displayName) + '</strong>' +
+      '<span class="muted">' + escapeHtml(roleLabel(state.user.roles)) + '</span></p>' +
+      '<button type="button" class="secondary" id="logout">Sign out</button>';
+    document.getElementById('logout').addEventListener('click', logout);
+
+    var profileMarkup = profile
+      ? '<dl class="panel">' +
+          '<div><dt>Employee</dt><dd>' + escapeHtml(profile.firstName + ' ' + profile.lastName) + '</dd></div>' +
+          '<div><dt>Role</dt><dd>Employee</dd></div>' +
+          '<div><dt>Number</dt><dd>' + escapeHtml(profile.employeeNumber) + '</dd></div>' +
+          '<div><dt>Email</dt><dd>' + escapeHtml(profile.email) + '</dd></div>' +
+        '</dl>'
+      : '<p class="muted">Profile unavailable.</p>';
+
+    var list = state.payslips.map(function (payslip) {
+      var selected = state.payslipDetail && state.payslipDetail.id === payslip.id ? ' secondary' : '';
+      return '<button type="button" class="' + selected + '" data-payslip="' + escapeHtml(payslip.id) + '">' +
+        escapeHtml(payslip.periodStart + ' to ' + payslip.periodEnd) +
+        ' · ' + escapeHtml(payslip.status) +
+      '</button>';
+    }).join('');
+
+    app.innerHTML =
+      renderMessage() +
+      '<section class="card"><h2>Your profile</h2>' + profileMarkup +
+      '<p class="muted">This view calls /api/my/profile and /api/my/payslips. The server uses the employee linked to this session.</p></section>' +
+      '<section class="card"><h2>Your payslips</h2>' +
+        (state.payslips.length
+          ? '<div class="actions">' + list + '</div>'
+          : '<p class="muted">No payslips yet. A payroll processor generates them for the open run.</p>') +
+        (state.payslipDetail
+          ? '<dl class="panel payslip">' + payslipLines(state.payslipDetail) + '</dl>'
+          : '') +
+      '</section>';
+
+    app.querySelectorAll('[data-payslip]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var id = button.getAttribute('data-payslip');
+        api('/api/my/payslips/' + id).then(function (detail) {
+          state.payslipDetail = detail.payslip;
+          state.message = null;
+          render();
+        }).catch(function (error) {
+          setMessage((error.status ? error.status + ' ' : '') + error.message, 'error');
+          render();
+        });
+      });
+    });
+  }
+
   function render() {
     if (!state.user) renderLogin();
+    else if (hasRole('employee')) renderSelfService();
     else renderWorkspace();
   }
 
