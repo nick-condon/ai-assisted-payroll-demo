@@ -1,0 +1,147 @@
+# Technical decisions
+
+These are the choices that shape this repository. They are sized for a demonstration, not for a full payroll product.
+
+### Decision: Small vertical slice
+
+**Context**
+
+A payroll system can grow into tax, payments, leave policy, and employee self-service. A reviewer cannot usefully read all of that in one sitting.
+
+**Decision**
+
+Ship one fortnight, five fictional employees, draft payslips, finalise, and a separate close.
+
+**Why**
+
+The slice still crosses the whole path: UI, API, rules, database, and tests. The separation between processor and closer is visible without extra modules.
+
+**Trade-off**
+
+The demo does not show reporting, document generation, employee self-service, or a real pay calculation.
+
+### Decision: TypeScript and Express
+
+**Context**
+
+The service is small, but the request path should stay explicit: route, middleware, service, SQL.
+
+**Decision**
+
+TypeScript on Node.js 22, with Express 4 and no frontend framework. The page is static HTML, CSS, and browser JavaScript served by the same process.
+
+**Why**
+
+Types document the payslip result and the workflow errors. Express keeps routing obvious. A framework would hide a UI that is only one page.
+
+**Trade-off**
+
+There is no shared client/server type generation, and the page does not have a component model.
+
+### Decision: PostgreSQL
+
+**Context**
+
+Payroll state is relational: a run has many payslips, a payslip belongs to one employee, and a user has roles.
+
+**Decision**
+
+PostgreSQL 16, accessed with `pg` and parameterised queries.
+
+**Why**
+
+Foreign keys and unique constraints match the model (one payslip per employee per run, one row per period). Transactions wrap payslip generation.
+
+**Trade-off**
+
+Local setup needs a database process. Compose provides it. There is no ORM, so SQL is written by hand.
+
+### Decision: Server-side sessions for demo login
+
+**Context**
+
+The public demo cannot depend on a real identity provider, and the browser must not be trusted to assert a role.
+
+**Decision**
+
+A sign-in picker posts a user id. The server creates a random token, stores its SHA-256 hash on `sessions`, and sets an HttpOnly `SameSite=Lax` cookie. Each request reloads roles from the database.
+
+**Why**
+
+The session is server-controlled and easy to explain. Logout deletes the row. The cookie is not a permission token.
+
+**Trade-off**
+
+Anyone who can open the app can choose a demo user. That is acceptable only because the data is fictional. It is not an identity system.
+
+### Decision: Server-side role checks
+
+**Context**
+
+The UI disables Generate for some roles. A disabled button is not a security boundary.
+
+**Decision**
+
+`requireAuth` then `requireRole` on each protected route. Viewer, processor, and closer are three role codes. Close is not granted to the processor.
+
+**Why**
+
+The interesting rule is separation of duties. Tests call the API directly and expect 403, so the check cannot live only in JavaScript.
+
+**Trade-off**
+
+There is no finer permission catalogue, no delegation UI, and no audit log of who closed a run beyond `closed_at` on the payroll row.
+
+### Decision: Plain SQL migrations
+
+**Context**
+
+The schema has to be recreated the same way on a new machine and inside the app container.
+
+**Decision**
+
+`src/db/migrations/001_init.sql`, applied by `src/db/migrate.ts`, which records filenames in `schema_migrations`.
+
+**Why**
+
+One file is enough for this schema, and the SQL is the source of truth. The container runs the same compiled migrator before it listens.
+
+**Trade-off**
+
+There is no down migration. Resetting demo rows is a separate seed command, not a schema rollback.
+
+### Decision: Docker Compose for the local stack
+
+**Context**
+
+A reviewer should start the database and the app without installing PostgreSQL by hand.
+
+**Decision**
+
+Compose runs Postgres 16 and a Node 22 image. The image builds TypeScript, then the container migrates, seeds, and starts the server. The host port is 3010.
+
+**Why**
+
+The image matches the declared Node version. Migrations are not left as a manual surprise on first boot of the full stack.
+
+**Trade-off**
+
+Tests still run on the host, against the published database port, because Jest is not part of the container command. The database password is a local default committed in the Compose file.
+
+### Decision: Jest around rules and transitions
+
+**Context**
+
+The formula and the close gate are the behaviours most likely to break quietly.
+
+**Decision**
+
+Unit tests call `calculatePayslip` directly. API tests boot the Express app against `payroll_demo_test`, seed fictional rows, and assert status codes.
+
+**Why**
+
+The calculator tests do not need a browser. The API tests prove that role checks run on the server and that a closed run stays closed.
+
+**Trade-off**
+
+There is no browser automation in `npm test`, and no coverage target. The click-through is manual.
