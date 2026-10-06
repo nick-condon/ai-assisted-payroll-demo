@@ -1,98 +1,95 @@
 # Synthetic payroll demo
 
-This repository is a small, working payroll workflow built as an engineering demonstration. It takes one business process from an empty database to a browser a reviewer can click through: an open fortnight, draft payslips, finalisation, and a separate close step.
+A working payroll slice for a technical review: open a fortnight, generate payslips, finalise them, and close the run under a different role. An employee sign-in can read only that person's own payslip. Every employee, sign-in, salary, allowance, and leave day here is fictional.
 
-It is a vertical slice, not a payroll product. The point is to show requirements, architecture, authorisation, tests, and a runnable application in one place.
+## Production context and this demo
 
-It is not a production payroll system. Every employee, sign-in identity, salary, allowance, and leave day in this repository is fictional.
+I designed and deployed a payroll application for a school supporting approximately 125 employees, four administrative users, and around 50 employee self-service users.
 
-## Problem
+The original payroll process relied on copying a large spreadsheet each fortnight and manually adjusting salaries for leave, overtime, salary advances, loan deductions, reimbursements, allowances, class coverage, and complex holiday-pay arrangements. Administrators then prepared cash-payment totals, bank-transfer instructions, and monthly tax and social-security reporting. Payroll information was manually entered into accounting records, while payslips were individually exported and emailed or printed and cut out for distribution.
 
-A payroll period should not be prepared and closed by the same unchecked action, and an employee should see only their own pay.
+The problem was broader than calculating pay. The process was labour-intensive, difficult to audit, and dependent on knowledge held largely by one administrator who had maintained it for 16 years. Limited built-in checks created room for human error, while fortnightly payroll had to be reconciled with monthly statutory reporting deadlines. The original brief also identified late-payment penalties as an existing operational concern.
 
-The demo models that split:
+A replacement needed to fit the school's working practices, not simply introduce more automation. Available packages were considered insufficiently customisable, and previous system changes had taken time for staff to adopt. Cash payments, printed payslips, different employee categories, and organisation-specific pay arrangements remained practical requirements. The design challenge was therefore to improve control and usability without forcing an abrupt change to how staff worked.
 
-- Employees belong to a pay run.
-- A processor generates draft payslips from a toy formula, including one unpaid-leave deduction and simple allowances.
-- The processor finalises each payslip.
-- A different role, the closer, closes the run, and only after every payslip is final.
-- A viewer can read the result and cannot change it.
-- After close, the run is immutable.
-- An employee sign-in can read that person's own profile and payslips. It cannot run payroll, and it cannot read another employee's payslip.
+The production application, employee data, organisation-specific payroll rules, and operational configuration remain private. This repository is a separate, fictional vertical slice, not a copy of that system. It demonstrates selected engineering concerns: explicit payroll state transitions, separation of duties between preparation and closure, server-side authorisation, employee-level data isolation, repeatable database setup, and automated tests.
 
-## Architecture
+The demo deliberately substitutes a simplified pay formula and local sign-in picker for the production calculation and Google identity integration. These substitutions let a reviewer exercise the workflow and inspect its trust boundaries without access to real staff information, production payroll rules, identity infrastructure, or cloud resources.
 
-```text
-Browser (HTML, CSS, plain JavaScript)
-        |
-        v
-Express / TypeScript API
-        |
-        +--> server-side sessions
-        +--> role checks
-        +--> record-level employee scope
-        +--> payroll services
-        |
-        v
-PostgreSQL 16
+The detailed comparison is in [PRODUCTION-VS-DEMO.md](PRODUCTION-VS-DEMO.md).
+
+## What this demonstrates
+
+- A payroll workflow with explicit state transitions
+- Server-side sessions and role checks
+- Separation of duties between preparing pay and closing the run
+- Employee self-service limited to one linked employee record
+- Record-level isolation, tested by requesting another employee's payslip
+- Automated tests around the formula, the roles, and the close rules
+
+The point is the path from a business requirement to a tested application: scope, architecture, server-side authorisation, and a page a reviewer can operate.
+
+## My role
+
+The author designed and deployed the production system, and owned the requirements, workflow, scope, architecture, authorization model, database shape, test strategy, review, and acceptance for this demo.
+
+AI-assisted tools drafted and revised implementation. They did not choose the slice or accept the result.
+
+## Demo architecture
+
+```mermaid
+flowchart TD
+  Browser --> API["Express / TypeScript API"]
+  API --> Sessions["Authentication / Sessions"]
+  API --> RBAC["RBAC / Authorization"]
+  API --> Payroll["Payroll services"]
+  API --> SelfService["Employee self-service"]
+  Sessions --> DB[(PostgreSQL)]
+  RBAC --> DB
+  Payroll --> DB
+  SelfService --> DB
 ```
 
-What is actually in the repository:
+The browser is plain HTML, CSS, and JavaScript. Express serves that page and the JSON API. Detail: [ARCHITECTURE.md](ARCHITECTURE.md). Decisions: [DECISIONS.md](DECISIONS.md).
 
-- An HttpOnly session cookie. The server stores only a hash of the token and loads the user's roles, and any linked employee, from PostgreSQL on each request.
-- Role checks on the API. Hiding a button is not the authorisation control.
-- Record-level checks for employee self-service. `/api/my/...` uses the employee id stored on the user, not an id chosen in the browser.
-- SQL migrations under `src/db/migrations`, applied by `npm run migrate`.
-- A small REST API. The route table is in [Security / authorization](#security--authorization).
-- Docker Compose for PostgreSQL 16 and the Node 22 application image.
-- Jest tests for the formula, role checks, record-level payslip access, and the close rules.
+## Technology
 
-There is no frontend framework, no OAuth client, and no production deployment in this repository.
-
-Further detail: [ARCHITECTURE.md](ARCHITECTURE.md), [DECISIONS.md](DECISIONS.md).
-
-## Key engineering decisions
-
-| Decision | Reason |
-| --- | --- |
-| TypeScript | Type safety and maintainability |
-| Express | Small, explicit HTTP service |
-| PostgreSQL | Relational model appropriate for payroll-style transactional data |
-| Server-side sessions | Simple demo authentication model with server-controlled session state |
-| Server-side RBAC | Authorization must not depend on UI controls |
-| Server-side record scope | An employee payslip query uses the employee id stored for that session |
-| SQL migrations | Reproducible database setup |
-| Docker Compose | Repeatable local environment |
-| Small vertical slice | Demonstrates complete delivery without unnecessary product complexity |
-
-Judgement and trade-offs: [DECISIONS.md](DECISIONS.md).
+Node.js 22, TypeScript, Express 4, PostgreSQL 16, SQL migrations, Jest, Docker Compose. No frontend framework.
 
 ## Security / authorization
 
-Sign-in is a development identity picker. The browser sends a user id. It does not send a role. `requireAuth` resolves the `demo_session` cookie to a database user. `requireRole` then allows the request only when that user's stored role is in the allowed list.
+Sign-in posts a user id. The browser does not send a role. `requireAuth` loads the user from the `demo_session` cookie. Roles and `users.employee_id` come from PostgreSQL on each request.
 
-This is deliberately simplified for a public demo. It is not production-grade identity management. A production system of this kind would use an identity provider. See [PRODUCTION-VS-DEMO.md](PRODUCTION-VS-DEMO.md).
+This login is for the public demo. It is not production identity management.
+
+### Role-level authorization
+
+The role decides which operation is allowed.
+
+| Role | Read payroll admin data | Generate and finalise | Close |
+| --- | --- | --- | --- |
+| Payroll viewer | Yes | No | No |
+| Payroll processor | Yes | Yes | No |
+| Payroll closer | Yes | No | Yes, after every payslip is final |
+| Employee | No | No | No |
+
+A processor who has finalised every payslip still receives **403** on close. The role check runs before the workflow check.
 
 | Situation | Response |
 | --- | --- |
-| No session on a protected route | 401 |
+| No session | 401 |
 | Signed in, role not allowed | 403 |
-| Business rule failed (for example, drafts remain, or the run is already closed) | 409 |
+| Rule failed, such as drafts remaining or a closed run | 409 |
 
-Protected routes deny by default: authentication is required, and the role list is explicit. Unknown API paths return 404.
+A closed run rejects generate and finalise with `Closed payroll cannot be modified`.
 
-| Role | Read employees, runs, and payslips | Generate and finalise | Close | Own payslips only |
-| --- | --- | --- | --- | --- |
-| Payroll viewer | Yes | No | No | No |
-| Payroll processor | Yes | Yes | No | No |
-| Payroll closer | Yes | No | Yes, once every payslip is final | No |
-| Employee | No | No | No | Yes |
+### Record-level authorization
 
-`GET /api/my/profile`, `GET /api/my/payslips`, and `GET /api/my/payslips/:id` require the `employee` role. The query is restricted to `users.employee_id` from the session. A payslip id that belongs to someone else returns 404, the same response as an unknown id, so the API does not confirm that the other payslip exists.
+The employee role only means "may open self-service." Which payslip they may read comes from `users.employee_id` on the session user.
 
-A closed run rejects generate and finalise. The service returns 409 with `Closed payroll cannot be modified`.
+`GET /api/my/profile`, `GET /api/my/payslips`, and `GET /api/my/payslips/:id` ignore any employee id in the query or body. A payslip that belongs to someone else returns **404**, the same body as an unknown id.
 
-Toy formula, rounded to cents:
+Toy formula, rounded to cents. Seed salaries are 1000, 2000, and 3000.
 
 ```text
 fortnightly base pay = annual salary / 26
@@ -101,30 +98,20 @@ leave deduction      = daily rate × unpaid days in the period
 net pay              = fortnightly base pay − leave deduction + allowances
 ```
 
-Seed salaries are 1000, 2000, and 3000 so the amounts stay obviously fictional.
-
-## Testing
-
-Jest with ts-jest. Eighteen tests, in two files:
-
-- `tests/payrollCalculator.test.ts` — fortnightly base, unpaid leave, allowance, and cent rounding.
-- `tests/api.test.ts` — unauthenticated reads return 401; a viewer can read; a viewer cannot generate (403); a processor cannot close (403); generate creates drafts; finalise sets `final`; close fails while a draft remains; the closer can close when all payslips are final; a closed run cannot be generated or finalised again; an employee can read their own profile, payslip list, and payslip; another employee's payslip returns 404; an employee cannot generate, finalise, or close.
-
-No coverage percentage is claimed. API tests need the Compose database running. They use a separate database, `payroll_demo_test`, and reset it themselves.
-
 ## Running locally
 
-Intended runtime: Node.js 22. That version is declared in `package.json` (`engines`), `.nvmrc`, and the Docker image `node:22-bookworm-slim`. PostgreSQL is 16, from Compose.
+Node.js 22 is declared in `package.json` (`engines`), `.nvmrc`, and the image `node:22-bookworm-slim`.
 
-The repeatable path is Compose. It migrates, seeds, and serves the app.
+Compose is the setup that does not depend on the host Node version. It migrates, seeds, and serves the app. The database password in `docker-compose.yml` is `demo_local_password`. That value is fictional and local-only. It is not a production secret. Compose does not read it from the environment. `.env` is for host commands and is gitignored. Copy it from [.env.example](.env.example).
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
 
 Open http://127.0.0.1:3010
 
-To run tests, or to work on the TypeScript directly, start only the database and use Node 22 on the host:
+To run tests or the TypeScript on the host, use Node 22. This path needs `.env`, because Compose does not create it:
 
 ```bash
 cp .env.example .env
@@ -137,36 +124,57 @@ npm run build
 npm run dev
 ```
 
-`npm run dev` listens on port 3010. Reset the fictional data with `npm run seed:reset`.
+`npm run dev` listens on port 3010. `npm run seed:reset` restores the open fortnight with no payslips. API tests use a separate database, `payroll_demo_test`, on the same server.
 
-The database password `demo_local_password` exists only in this local Compose file.
+## Demo identities
+
+| Sign in as | Email | What they can do |
+| --- | --- | --- |
+| Riley Quinn | processor@example.com | Generate and finalise |
+| Jordan Hale | closer@example.com | Close, after every payslip is final |
+| Avery Brooks | viewer@example.com | Read the run |
+| Employee — Alex Morgan | alex.employee@example.com | Own profile and payslip only |
+| Employee — Jamie Lee | jamie.employee@example.com | Own profile and payslip only |
+
+Alex is employee `E-1001`. Jamie is `E-1002`. The other three employees have no sign-in.
 
 ## Demo workflow
 
-1. Sign in as Riley Quinn, payroll processor.
-2. View the open payroll run (1–14 June 2026 in the seed data).
-3. Generate payslips.
-4. Finalise each payslip.
-5. Choose **Close payroll**. The server returns 403.
-6. Sign out. Sign in as Jordan Hale, payroll closer.
-7. Close the payroll run.
-8. Sign out. Sign in as Avery Brooks, payroll viewer.
-9. Observe the closed, read-only run. Generate stays unavailable.
-10. Sign in as **Employee — Alex Morgan**. The page shows Alex's profile and Alex's payslip only.
-11. Jamie Lee's payslip is not in that response. Requesting Jamie's payslip id as Alex returns 404. The five-minute script is [DEMO.md](DEMO.md).
+1. Sign in as Riley Quinn. The run for 1–14 June 2026 is open.
+2. Generate payslips, then finalise each one.
+3. Choose **Close payroll**. The server returns 403.
+4. Sign in as Jordan Hale and close the run.
+5. Sign in as Avery Brooks and read the closed run.
+6. Sign in as **Employee — Alex Morgan**. The page shows Alex's payslip only.
+7. Request Jamie's payslip id as Alex. The API returns 404.
 
-## Production relationship
+The timed script is [DEMO.md](DEMO.md).
 
-This demo is intentionally separate from the production payroll system. It is a synthetic representation of selected engineering concepts from a real production project.
+## Testing
 
-The author designed and deployed that production system for a school. It supports approximately 125 employees, four administrative users, and around 50 employee self-service users. That system has a wider workflow, operational controls, and a real identity provider. This repository keeps only a fictional slice that can be shown in public: relational payroll state, server-side authorisation, a simplified employee view of one's own payslip, tests, and a runnable UI.
+Jest and ts-jest. Eighteen tests, in two files:
 
-The employee page in this demo is not the production self-service portal.
+- `tests/payrollCalculator.test.ts` — fortnightly base, unpaid leave, allowance, cent rounding.
+- `tests/api.test.ts` — 401 without a session; viewer read; viewer cannot generate; processor cannot close; generate, finalise, and close; close blocked while a draft remains; a closed run cannot be generated or finalised again; employee own profile, list, and payslip; another employee's payslip returns 404; an employee cannot generate, finalise, or close.
 
-Nothing here is copied from the production codebase. Comparison: [PRODUCTION-VS-DEMO.md](PRODUCTION-VS-DEMO.md).
+No coverage percentage is claimed.
 
 ## AI-assisted development
 
-The project was implemented with AI-assisted coding. The human developer owned the problem, the workflow, the scope, the architecture, the technical choices, the authorisation model, the database shape, the testing strategy, review, and acceptance.
+Perplexity was used to help write detailed engineering prompts. Cursor was the coding environment for implementation and revision.
 
-AI tooling was used to draft and revise implementation code, tests, and documentation inside those decisions. It did not independently design or deliver the system. Detail: [AI-DEVELOPMENT.md](AI-DEVELOPMENT.md).
+The developer owned requirements, workflow, scope, architecture, authorization, the database shape, the test strategy, review, and acceptance. [AI-DEVELOPMENT.md](AI-DEVELOPMENT.md).
+
+## What is deliberately absent
+
+Tax, jurisdiction-specific pay rules, payments, PDF payslips, Google OIDC, Google Cloud deployment, employee administration, and any production data or assets.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Request flow, both authorization checks, data model, state |
+| [DECISIONS.md](DECISIONS.md) | Why the slice, stack, sessions, roles, and record scope |
+| [AI-DEVELOPMENT.md](AI-DEVELOPMENT.md) | What the developer owned, and what the tools did |
+| [PRODUCTION-VS-DEMO.md](PRODUCTION-VS-DEMO.md) | What was left out, and why |
+| [DEMO.md](DEMO.md) | Five-minute walkthrough |

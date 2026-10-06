@@ -2,7 +2,7 @@
   "name": "ai-assisted-payroll-demo",
   "version": "0.1.0",
   "private": true,
-  "description": "Anonymised fictional payroll demonstration. Not a production system.",
+  "description": "Synthetic payroll engineering demo. Fictional data. Not the production system.",
   "type": "module",
   "engines": {
     "node": ">=22"

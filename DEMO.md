@@ -75,7 +75,7 @@ That last call returns 404. Jamie's own payslip id returns 200. The server appli
 
 ## 3:30–4:30 — Tests
 
-From the repository, with the database up:
+From the repository, after `npm install`, with the Compose database running and Node.js 22 on the host:
 
 ```bash
 npm test

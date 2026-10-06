@@ -1,3 +1,5 @@
+# demo_local_password is a fictional local-only database password.
+# It is not a production secret. This file does not load .env.
 services:
   db:
     image: postgres:16

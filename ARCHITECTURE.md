@@ -4,22 +4,17 @@ A single Node process serves a static page and a JSON API. PostgreSQL holds user
 
 ## System context
 
-```text
-[Browser]
-    |
-    v
-[Express / TypeScript API]
-    |
-    +--> [Authentication / Sessions]
-    |
-    +--> [RBAC / Authorization]
-    |
-    +--> [Record-level employee scope]
-    |
-    +--> [Payroll Services]
-    |
-    v
-[PostgreSQL]
+```mermaid
+flowchart TD
+  Browser --> API["Express / TypeScript API"]
+  API --> Sessions["Authentication / Sessions"]
+  API --> RBAC["RBAC / Authorization"]
+  API --> Payroll["Payroll services"]
+  API --> SelfService["Employee self-service"]
+  Sessions --> DB[(PostgreSQL)]
+  RBAC --> DB
+  Payroll --> DB
+  SelfService --> DB
 ```
 
 The browser is `public/index.html`, `public/app.js`, and `public/styles.css`. There is no frontend build step. Express serves those files and the `/api` routes from `src/app.ts`.

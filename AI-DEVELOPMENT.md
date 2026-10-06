@@ -15,11 +15,14 @@ The human developer owned:
 - Database decisions: the tables in `src/db/migrations`, including `users.employee_id` as the ownership link.
 - RBAC model: viewer, processor, closer, and employee, enforced with `requireAuth` and `requireRole`, plus payslip queries scoped to the session's employee id.
 - Testing approach: formula tests plus API tests for 401, 403, the close gate, own-record access, and cross-employee denial.
-- Review and acceptance of the resulting code.
+- Review, validation, and acceptance of the resulting code.
+- Deployment approach: this demo runs locally with Docker Compose. It is not deployed.
 
 ## AI-assisted work
 
-AI coding tools were used to help:
+Perplexity was used to help develop detailed engineering prompts. Cursor was the coding environment used to implement and revise the demo.
+
+Those tools were used to:
 
 - Generate implementation code for the API, page, and Compose file
 - Revise that code when a test or the TypeScript build failed
@@ -27,7 +30,7 @@ AI coding tools were used to help:
 - Iterate on the Jest cases from the acceptance rules above
 - Accelerate documentation drafts
 
-Those tools worked inside decisions the developer had already made. They did not choose the slice, the role split, the employee-to-user link, or the toy formula. They were not given production source or production data.
+They worked inside decisions the developer had already made. They did not choose the slice, the role split, the employee-to-user link, or the toy formula. They were not given production source or production data.
 
 ## Development loop
 
