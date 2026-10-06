@@ -2,6 +2,25 @@
 
 A working payroll slice for a technical review: open a fortnight, generate payslips, finalise them, and close the run under a different role. An employee sign-in can read only that person's own payslip. Every employee, sign-in, salary, allowance, and leave day here is fictional.
 
+## Demo preview
+
+### Payroll preparation
+
+![Synthetic payroll processor view showing an open run, draft-payslip stage, and workflow controls](docs/images/payroll-workflow-overview.jpg)
+
+Fictional payroll run after draft generation. The processor prepares
+and finalises payslips; a separate authorised role closes the run.
+
+### Employee self-service
+
+![Synthetic employee view showing Alex Morgan's profile and finalised payslip](docs/images/employee-self-service.jpg)
+
+Employee self-service after finalisation, showing the fictional
+employee's profile and payslip.
+
+See [the five-minute walkthrough](DEMO.md) for the complete workflow,
+including draft payslips and authorisation checks.
+
 ## Production context and this demo
 
 I designed and deployed a payroll application for a school supporting approximately 125 employees, four administrative users, and around 50 employee self-service users.
