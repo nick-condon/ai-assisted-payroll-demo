@@ -104,7 +104,7 @@ Numbered SQL files under `src/db/migrations`, applied by `src/db/migrate.ts`, wh
 
 **Why**
 
-One file is enough for this schema, and the SQL is the source of truth. The container runs the same compiled migrator before it listens.
+Numbered SQL migrations keep schema changes explicit, and SQL remains the source of truth. The container runs the same compiled migrator before it listens.
 
 **Trade-off**
 
